@@ -17,7 +17,7 @@ module.exports = {
       // Uncomment these lines to use mainnet fork
       forking: {
         url: `https://eth-mainnet.alchemyapi.io/v2/${process.env.ALCHEMY_KEY}`,
-        blockNumber: 11589707,
+        //blockNumber: 11589707,
       },
     },
     // live: {

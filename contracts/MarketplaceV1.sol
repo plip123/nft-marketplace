@@ -24,10 +24,18 @@ contract MarketplaceV1 is Initializable, OwnableUpgradeable {
 
     address private adminAddr;
     address recipientAddr;
+    address constant linkAddr = 0x514910771AF9Ca656af840dff83E8264EcF986CA;
+    address constant daiAddr = 0x6B175474E89094C44Da98b954EedeAC495271d0F;
     uint256 fee;
-    Item[] private items;
+    IERC20 LINK;
+    IERC20 DAI;
+    AggregatorV3Interface internal priceFeedUSD;
+    AggregatorV3Interface internal priceFeedDAI;
+    AggregatorV3Interface internal priceFeedLINK;
+    Item[] internal items;
     mapping(address => mapping(uint256 => uint256)) public offerts;
 
+    // Events
     event SellItem(address vendor, uint256 id, uint256 price, uint256 quantity);
     event BuyItem(
         address vendor,
@@ -46,6 +54,18 @@ contract MarketplaceV1 is Initializable, OwnableUpgradeable {
         adminAddr = _admin;
         recipientAddr = _recipient;
         fee = 1;
+
+        DAI = IERC20(daiAddr);
+        LINK = IERC20(linkAddr);
+        priceFeedUSD = AggregatorV3Interface(
+            0x5f4eC3Df9cbd43714FE2740f5E3616155c5b8419
+        );
+        priceFeedLINK = AggregatorV3Interface(
+            0x2c1d072e956AFFC0D435Cb7AC38EF18d24d9127c
+        );
+        priceFeedDAI = AggregatorV3Interface(
+            0xAed0c38402a5d19df6E4c03F4E2DceD6e29c1ee9
+        );
     }
 
     /**
@@ -60,6 +80,7 @@ contract MarketplaceV1 is Initializable, OwnableUpgradeable {
         address tokenAddr
     ) public payable {
         console.log(itemId, vendorAddr, tokenAddr);
+        getLatestPrice(tokenAddr);
         // require(itemToken.ownerOf(itemId) != msg.sender, "You are the owner");
         Item storage item = items[offerts[vendorAddr][itemId]];
 
@@ -90,8 +111,8 @@ contract MarketplaceV1 is Initializable, OwnableUpgradeable {
         //     itemToken.ownerOf(tokenId) == msg.sender,
         //     "You are not the owner"
         // );
-        require(price > 0, "Price must be greater than 0");
-        require(quantity > 0, "Quantity must be greater than 0");
+        require(price > 0, "Can not sell 0 tokens");
+        require(quantity > 0, "Can not sell 0 tokens");
         // require(
         //     itemToken.getApproved(tokenId) == address(this),
         //     "This item has not yet been approved"
@@ -115,6 +136,24 @@ contract MarketplaceV1 is Initializable, OwnableUpgradeable {
         delete offerts[msg.sender][itemId];
 
         emit CancelOffer(msg.sender, itemId);
+    }
+
+    /**
+     * Get current WEI price per USD, DAI or LINK value in ETH
+     */
+    function getLatestPrice(address tokenAddr) public view returns (uint256) {
+        int256 price;
+
+        if (tokenAddr == linkAddr) {
+            (, price, , , ) = priceFeedLINK.latestRoundData();
+        } else if (tokenAddr == daiAddr) {
+            (, price, , , ) = priceFeedDAI.latestRoundData();
+        } else {
+            (, price, , , ) = priceFeedUSD.latestRoundData();
+        }
+
+        //price = 10**26 / price;
+        return uint256(price);
     }
 
     /**

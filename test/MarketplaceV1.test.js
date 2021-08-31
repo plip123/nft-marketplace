@@ -1,12 +1,15 @@
 const { ethers, upgrades } = require("hardhat");
 const { expect } = require("chai");
 
+
+
 describe("MarketplaceV1", () => {
     let marketplace;
     let admin;
     let alice;
     let bob;
     let random;
+
 
     before(async () => {
         [admin, alice, bob, random] = await ethers.getSigners();
@@ -60,6 +63,7 @@ describe("MarketplaceV1", () => {
         it("should not sell item if price is less than 1", async () => {
             let errStatus = false
             try {
+                console.log(Number(await marketplace.getLatestPrice("0x0000000000000000000000000000000000000000")))
                 await marketplace.connect(alice).sellItem(0, 0, 0);
             } catch(e) {
                 assert(e.toString().includes('Price must be greater than 0'));
