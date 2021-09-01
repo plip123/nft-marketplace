@@ -1,4 +1,5 @@
 const { ethers, upgrades } = require("hardhat");
+const {BN, expectEvent, time, expectRevert} = require('@openzeppelin/test-helpers');
 const { expect } = require("chai");
 
 
@@ -10,14 +11,17 @@ describe("MarketplaceV1", () => {
     let alice;
     let bob;
     let random;
+    let date;
     const zeroAddress = ethers.constants.AddressZero;
     const etherAddress = "0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE";
+
 
 
     before(async () => {
         [admin, alice, bob, random] = await ethers.getSigners();
         const Marketplace = await ethers.getContractFactory("MarketplaceV1");
         const NFTToken = await ethers.getContractFactory("NFTToken");
+        date = time.duration.days(10);
 
         nftToken = await NFTToken.deploy();
         await nftToken.deployed();
@@ -68,7 +72,7 @@ describe("MarketplaceV1", () => {
         it("should not sell item if price is less than 1", async () => {
             let errStatus = false;
             try {
-                await marketplace.connect(alice).sellItem(nftToken.address, 1, 0, 0);
+                await marketplace.connect(alice).sellItem(nftToken.address, 1, 0, Number(date), 0);
             } catch(e) {
                 assert(e.toString().includes('Price must be greater than 0'));
                 errStatus = true;
@@ -80,7 +84,7 @@ describe("MarketplaceV1", () => {
         it("should not sell item if quantity is less than 1", async () => {
             let errStatus = false;
             try {
-                await marketplace.connect(alice).sellItem(nftToken.address, 1, 1, 0);
+                await marketplace.connect(alice).sellItem(nftToken.address, 1, 1, Number(date), 0);
             } catch(e) {
                 assert(e.toString().includes('Can not sell 0 tokens'));
                 errStatus = true;
@@ -92,7 +96,7 @@ describe("MarketplaceV1", () => {
         it("should not be able to sell a token if you do not have enough tokens", async () => {
             let errStatus = false;
             try {
-                await marketplace.connect(alice).sellItem(nftToken.address, 0, 1, 2);
+                await marketplace.connect(alice).sellItem(nftToken.address, 0, 1, Number(date), 2);
             } catch(e) {
                 assert(e.toString().includes('You do not have enough tokens'));
                 errStatus = true;
@@ -101,10 +105,36 @@ describe("MarketplaceV1", () => {
         });
 
 
+        it("should not sell if the date is less than one day", async () => {
+            let errStatus = false;
+            try {
+                await marketplace.connect(alice).sellItem(nftToken.address, 0, 1, 0, 1);
+            } catch(e) {
+                assert(e.toString().includes('Time must be greater than 0'));
+                errStatus = true;
+            }
+            assert(errStatus, 'No error occurred when a user tries to sell more tokens than they owns.');
+        });
+
+
+        it("should sell a product if the marketplace does not have permission to use the tokens", async () => {
+            await nftToken.createToken("test", 1, alice.address);
+            let errStatus = false;
+            try {
+                await marketplace.connect(alice).sellItem(nftToken.address, 0, 1, Number(date), 1);
+            } catch(e) {
+                assert(e.toString().includes('No permissions on tokens'));
+                errStatus = true;
+            }
+            assert(errStatus, 'No error occurred when the marketplace is not approved to use the tokens.');
+        });
+
+
         it("should publish an offer", async () => {
-            await nftToken.createToken("Test", 1, alice.address);
             await nftToken.connect(alice).setApprovalForAll(marketplace.address, true);
-            //await marketplace.connect(alice).sellItem(nftToken.address, 0, 1, 1);
+            await expect(marketplace.connect(alice).sellItem(nftToken.address, 0, 1, Number(date), 1))
+            .to.emit(marketplace, 'SellItem')
+            .withArgs(alice.address, 0, 1, 1);
         });
     });
 

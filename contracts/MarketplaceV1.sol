@@ -16,9 +16,11 @@ contract MarketplaceV1 is Initializable, OwnableUpgradeable {
 
     struct Item {
         uint256 id;
+        address token;
         address vendor;
         uint256 price;
         uint256 quantity;
+        uint256 deadline;
         bool available;
     }
 
@@ -107,21 +109,33 @@ contract MarketplaceV1 is Initializable, OwnableUpgradeable {
         address tokenAddr,
         uint256 tokenId,
         uint256 price,
+        uint256 timestamp,
         uint256 quantity
     ) public {
         require(price > 0, "Price must be greater than 0");
         require(quantity > 0, "Can not sell 0 tokens");
+        require(timestamp > 0, "Time must be greater than 0");
         require(
             IERC1155(tokenAddr).balanceOf(msg.sender, tokenId) >= quantity,
             "You do not have enough tokens"
         );
-        if (IERC1155(tokenAddr).isApprovedForAll(msg.sender, address(this))) {
-            console.log("Approved");
-        } else {
-            console.log("Not approved");
-        }
+        require(
+            IERC1155(tokenAddr).isApprovedForAll(msg.sender, address(this)),
+            "No permissions on tokens"
+        );
 
-        items.push(Item(tokenId, msg.sender, price, quantity, true));
+        items.push(
+            Item(
+                tokenId,
+                tokenAddr,
+                msg.sender,
+                price,
+                quantity,
+                block.timestamp + timestamp,
+                true
+            )
+        );
+
         offerts[msg.sender][tokenId] = items.length.sub(1);
 
         emit SellItem(msg.sender, tokenId, price, quantity);
