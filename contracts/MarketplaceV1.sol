@@ -26,6 +26,7 @@ contract MarketplaceV1 is Initializable, OwnableUpgradeable {
     address recipientAddr;
     address constant linkAddr = 0x514910771AF9Ca656af840dff83E8264EcF986CA;
     address constant daiAddr = 0x6B175474E89094C44Da98b954EedeAC495271d0F;
+    address constant ethAddr = 0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE;
     uint256 fee;
     IERC20 LINK;
     IERC20 DAI;
@@ -103,20 +104,22 @@ contract MarketplaceV1 is Initializable, OwnableUpgradeable {
      * @param quantity number of items to sell
      */
     function sellItem(
+        address tokenAddr,
         uint256 tokenId,
         uint256 price,
         uint256 quantity
     ) public {
-        // require(
-        //     itemToken.ownerOf(tokenId) == msg.sender,
-        //     "You are not the owner"
-        // );
-        require(price > 0, "Can not sell 0 tokens");
+        require(price > 0, "Price must be greater than 0");
         require(quantity > 0, "Can not sell 0 tokens");
-        // require(
-        //     itemToken.getApproved(tokenId) == address(this),
-        //     "This item has not yet been approved"
-        // );
+        require(
+            IERC1155(tokenAddr).balanceOf(msg.sender, tokenId) >= quantity,
+            "You do not have enough tokens"
+        );
+        if (IERC1155(tokenAddr).isApprovedForAll(msg.sender, address(this))) {
+            console.log("Approved");
+        } else {
+            console.log("Not approved");
+        }
 
         items.push(Item(tokenId, msg.sender, price, quantity, true));
         offerts[msg.sender][tokenId] = items.length.sub(1);

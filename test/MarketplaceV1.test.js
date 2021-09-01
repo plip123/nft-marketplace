@@ -5,24 +5,29 @@ const { expect } = require("chai");
 
 describe("MarketplaceV1", () => {
     let marketplace;
+    let nftToken;
     let admin;
     let alice;
     let bob;
     let random;
+    const zeroAddress = ethers.constants.AddressZero;
+    const etherAddress = "0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE";
 
 
     before(async () => {
         [admin, alice, bob, random] = await ethers.getSigners();
         const Marketplace = await ethers.getContractFactory("MarketplaceV1");
+        const NFTToken = await ethers.getContractFactory("NFTToken");
 
-
+        nftToken = await NFTToken.deploy();
+        await nftToken.deployed();
         marketplace = await upgrades.deployProxy(Marketplace, [admin.address, admin.address]);
     });
 
 
     describe("Admin", () => {
         it("should not change the fee amount", async () => {
-            let errStatus = false
+            let errStatus = false;
             try {
                 await marketplace.connect(alice).setFee(2);
             } catch(e) {
@@ -34,7 +39,7 @@ describe("MarketplaceV1", () => {
 
 
         it("should not change the recipient fee", async () => {
-            let errStatus = false
+            let errStatus = false;
             try {
                 await marketplace.connect(alice).setRecipientFee(alice.address);
             } catch(e) {
@@ -61,15 +66,45 @@ describe("MarketplaceV1", () => {
 
     describe("Sell", () => {
         it("should not sell item if price is less than 1", async () => {
-            let errStatus = false
+            let errStatus = false;
             try {
-                console.log(Number(await marketplace.getLatestPrice("0x0000000000000000000000000000000000000000")))
-                await marketplace.connect(alice).sellItem(0, 0, 0);
+                await marketplace.connect(alice).sellItem(nftToken.address, 1, 0, 0);
             } catch(e) {
                 assert(e.toString().includes('Price must be greater than 0'));
                 errStatus = true;
             }
-            assert(errStatus, 'No mistake was made when a non-admin user tried to change the fee amount.')
+            assert(errStatus, 'No error occurred when a user enters a price less than 1.');
+        });
+
+
+        it("should not sell item if quantity is less than 1", async () => {
+            let errStatus = false;
+            try {
+                await marketplace.connect(alice).sellItem(nftToken.address, 1, 1, 0);
+            } catch(e) {
+                assert(e.toString().includes('Can not sell 0 tokens'));
+                errStatus = true;
+            }
+            assert(errStatus, 'No error occurred when a user enters a quantity less than 1.');
+        });
+
+
+        it("should not be able to sell a token if you do not have enough tokens", async () => {
+            let errStatus = false;
+            try {
+                await marketplace.connect(alice).sellItem(nftToken.address, 0, 1, 2);
+            } catch(e) {
+                assert(e.toString().includes('You do not have enough tokens'));
+                errStatus = true;
+            }
+            assert(errStatus, 'No error occurred when a user tries to sell more tokens than they owns.');
+        });
+
+
+        it("should publish an offer", async () => {
+            await nftToken.createToken("Test", 1, alice.address);
+            await nftToken.connect(alice).setApprovalForAll(marketplace.address, true);
+            //await marketplace.connect(alice).sellItem(nftToken.address, 0, 1, 1);
         });
     });
 
