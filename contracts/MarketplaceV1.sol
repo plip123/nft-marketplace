@@ -26,9 +26,6 @@ contract MarketplaceV1 is Initializable, OwnableUpgradeable {
 
     address private adminAddr;
     address recipientAddr;
-    address constant linkAddr = 0x514910771AF9Ca656af840dff83E8264EcF986CA;
-    address constant daiAddr = 0x6B175474E89094C44Da98b954EedeAC495271d0F;
-    address constant ethAddr = 0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE;
     uint256 fee;
     IERC20 LINK;
     IERC20 DAI;
@@ -58,8 +55,8 @@ contract MarketplaceV1 is Initializable, OwnableUpgradeable {
         recipientAddr = _recipient;
         fee = 1;
 
-        DAI = IERC20(daiAddr);
-        LINK = IERC20(linkAddr);
+        DAI = IERC20(0x6B175474E89094C44Da98b954EedeAC495271d0F);
+        LINK = IERC20(0x514910771AF9Ca656af840dff83E8264EcF986CA);
         priceFeedUSD = AggregatorV3Interface(
             0x5f4eC3Df9cbd43714FE2740f5E3616155c5b8419
         );
@@ -72,49 +69,23 @@ contract MarketplaceV1 is Initializable, OwnableUpgradeable {
     }
 
     /**
-     * Buy a marketplace item
-     * @param itemId ID of the item to buy
-     * @param vendorAddr Vendor's address
-     * @param tokenAddr ERC20 token address
-     */
-    function buyItem(
-        uint256 itemId,
-        address vendorAddr,
-        address tokenAddr
-    ) public payable {
-        console.log(itemId, vendorAddr, tokenAddr);
-        getLatestPrice(tokenAddr);
-        // require(itemToken.ownerOf(itemId) != msg.sender, "You are the owner");
-        Item storage item = items[offerts[vendorAddr][itemId]];
-
-        require(item.available, "Product not in stock");
-        item.available = false;
-
-        emit BuyItem(
-            item.vendor,
-            msg.sender,
-            itemId,
-            item.price,
-            item.quantity
-        );
-    }
-
-    /**
      * Allows a vendor to sell an item in the marketplace
+     * @param tokenAddr ERC1155 token address
      * @param tokenId ID of the token to sell
      * @param price item price
+     * @param deadline deadline of sell
      * @param quantity number of items to sell
      */
     function sellItem(
         address tokenAddr,
         uint256 tokenId,
         uint256 price,
-        uint256 timestamp,
+        uint256 deadline,
         uint256 quantity
     ) public {
         require(price > 0, "Price must be greater than 0");
         require(quantity > 0, "Can not sell 0 tokens");
-        require(timestamp > 0, "Time must be greater than 0");
+        require(deadline > 0, "Time must be greater than 0");
         require(
             IERC1155(tokenAddr).balanceOf(msg.sender, tokenId) >= quantity,
             "You do not have enough tokens"
@@ -131,7 +102,7 @@ contract MarketplaceV1 is Initializable, OwnableUpgradeable {
                 msg.sender,
                 price,
                 quantity,
-                block.timestamp + timestamp,
+                block.timestamp.add(deadline),
                 true
             )
         );
@@ -146,31 +117,97 @@ contract MarketplaceV1 is Initializable, OwnableUpgradeable {
      * @param itemId ID of the item to cancel
      */
     function cancelOffer(uint256 itemId) public {
-        uint256 index = offerts[msg.sender][itemId];
-        require(items[index].vendor == msg.sender, "You are not the owner");
-
-        delete items[index];
-        delete offerts[msg.sender][itemId];
+        Item storage item = items[offerts[msg.sender][itemId]];
+        require(item.vendor == msg.sender, "You are not the owner");
+        item.available = false;
 
         emit CancelOffer(msg.sender, itemId);
     }
 
     /**
+     * Buy a marketplace item.
+     * @notice If you use ETH as a payment method, you must pass by tokenAddr the following address 0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE
+     * @param itemId ID of the item to buy
+     * @param tokenAddr Address of currency of payment
+     * @param vendorAddr Address of vendor item
+     */
+    function buyItem(
+        uint256 itemId,
+        address tokenAddr,
+        address vendorAddr
+    ) public payable {
+        Item storage item = items[offerts[vendorAddr][itemId]];
+        require(item.vendor != msg.sender, "You are the owner");
+        require(item.available, "Product not in stock");
+        require(item.deadline >= block.timestamp, "Product not in stock");
+        uint256 amount = getLatestPrice(tokenAddr, item.price);
+        uint256 feeAmount = (amount.mul(fee)).div(100);
+        uint256 total = amount = amount.sub(feeAmount);
+
+        if (tokenAddr != 0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE) {
+            require(
+                IERC20(tokenAddr).balanceOf(msg.sender) >= amount,
+                "Balance not enough"
+            );
+            item.available = false;
+
+            // PAY
+            IERC20(tokenAddr).safeTransferFrom(msg.sender, item.vendor, total);
+
+            // FEE
+            IERC20(tokenAddr).safeTransferFrom(
+                msg.sender,
+                recipientAddr,
+                feeAmount
+            );
+        } else {
+            require(msg.value >= amount, "Balance not enough");
+            item.available = false;
+
+            payable(msg.sender).transfer(uint256(msg.value).sub(amount));
+            payable(item.vendor).transfer(total);
+            payable(recipientAddr).transfer(feeAmount);
+        }
+
+        // Transfer NFT token
+        IERC1155(item.token).safeTransferFrom(
+            item.vendor,
+            msg.sender,
+            item.id,
+            item.quantity,
+            ""
+        );
+
+        emit BuyItem(
+            item.vendor,
+            msg.sender,
+            itemId,
+            item.price,
+            item.quantity
+        );
+    }
+
+    /**
      * Get current WEI price per USD, DAI or LINK value in ETH
      */
-    function getLatestPrice(address tokenAddr) public view returns (uint256) {
+    function getLatestPrice(address tokenAddr, uint256 amount)
+        public
+        view
+        returns (uint256)
+    {
         int256 price;
 
-        if (tokenAddr == linkAddr) {
+        if (tokenAddr == 0x514910771AF9Ca656af840dff83E8264EcF986CA) {
             (, price, , , ) = priceFeedLINK.latestRoundData();
-        } else if (tokenAddr == daiAddr) {
+        } else if (tokenAddr == 0x6B175474E89094C44Da98b954EedeAC495271d0F) {
             (, price, , , ) = priceFeedDAI.latestRoundData();
         } else {
             (, price, , , ) = priceFeedUSD.latestRoundData();
         }
 
-        //price = 10**26 / price;
-        return uint256(price);
+        price = 10**26 / price;
+        amount = amount.div(uint256(price));
+        return uint256(amount);
     }
 
     /**
